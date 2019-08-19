@@ -1,0 +1,97 @@
+free是用来查看当前系统的内存使用情况的。
+在解释之前，先要熟悉几个概念。
+共享链接库：它的意思是一些共享的库文件，不需要每个进程都加载到内存中，每个进程可以共享它们。从而达到节省内存的目的。比如libc.
+
+然后是Cache Pages和Buffer，以下是从Redhat的网站上抓出来的。
+这里需要注意一点的是：它们的系统来使用的，在新版本的free中是used列中，是没有计算出来的，原因就是在系统的可用内存没有的时候，OS会释放一些Cached或Buffered的内存，给应用程序。
+
+Linux always tries to use RAM to speed up disk operations by using
+available memory for buffers (file system metadata) and cache (pages
+with actual contents of files or block devices). This helps the system
+to run faster because disk information is already in memory which
+saves I/O operations. If space is needed by programs or applications
+like Oracle, then Linux will free up the buffers and cache to yield
+memory for the applications. If your system runs for a while you will
+usually see a small number under the field “free” on the first line.
+
+–
+
+Cache Pages:
+
+A cache is the part of the memory which transparently stores data so
+that future requests for that data can be served faster. This memory
+is utilized by the kernel to cache disk data and improve i/o
+performance.
+
+The Linux kernel is built in such a way that it will use as much RAM
+as it can to cache information from your local and remote filesystems
+and disks. As the time passes over various reads and writes are
+performed on the system, kernel tries to keep data stored in the
+memory for the various processes which are running on the system or
+the data that of relevant processes which would be used in the near
+future. The cache is not reclaimed at the time when process get
+stop/exit, however when the other processes requires more memory then
+the free available memory, kernel will run heuristics to reclaim the
+memory by storing the cache data and allocating that memory to new
+process.
+
+When any kind of file/data is requested then the kernel will look for
+a copy of the part of the file the user is acting on, and, if no such
+copy exists, it will allocate one new page of cache memory and fill it
+with the appropriate contents read out from the disk.
+
+The data that is stored within a cache might be values that have been
+computed earlier or duplicates of original values that are stored
+elsewhere in the disk. When some data is requested, the cache is first
+checked to see whether it contains that data. The data can be
+retrieved more quickly from the cache than from its source origin.
+
+SysV shared memory segments are also accounted as a cache, though they
+do not represent any data on the disks. One can check the size of the
+shared memory segments using ipcs -m command and checking the bytes
+column.
+
+Buffers :
+
+Buffers are the disk block representation of the data that is stored
+under the page caches. Buffers contains the metadata of the files/data
+which resides under the page cache. Example: When there is a request
+of any data which is present in the page cache, first the kernel
+checks the data in the buffers which contain the metadata which points
+to the actual files/data contained in the page caches. Once from the
+metadata the actual block address of the file is known, it is picked
+up by the kernel for processing.
+
+我们来看看free的输出：
+
+-	total	used	free	shared	buff/cache	available
+Mem:	65697148	28995804	15909532	1587368	20791812	32578364
+total ： 表示系统的总内存
+used ： 表示应用程序已经使用的内存
+free ： 表示当前还没有被使用的内存
+shared ：表示共享链接库使用的内存
+buff/cache ： 表示系统的page cache和buffer使用到的内存
+available ： 表示应用程序还可以申请到的内存
+
+系统当前使用到的内存是：used + buff/cache，used中包含了shared。
+
+所以total = used + buff/cache + free = 28995804 +20791812 + 15909532 = 65697148。
+
+available（32578364） <= free + buff/cache（15909532 + 20791812 = 36701344），为什么是小于呢？因为系统的一些page或cache是不能回收的。
+
+As of the new available field, for Linux kernels older than 2.6.27,
+its value is the same as the free value, but for the later versions of
+the Kernel, its a bit different:
+
+Estimation of how much memory is available for starting new
+applications, without swapping. Unlike the data provided by the cache
+or free fields, this field takes into account page cache and also
+that not all reclaimable memory slabs will be reclaimed due to items
+being in use (MemAvailable in /proc/meminfo, available on
+kernels 3.14, emulated on kernels 2.6.27+, otherwise the same as
+free)
+
+refs：
+https://askubuntu.com/questions/770108/what-do-the-changes-in-free-output-from-14-04-to-16-04-mean
+http://www.cnblogs.com/chenpingzhao/p/5161844.html
+https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/5/html/Tuning_and_Optimizing_Red_Hat_Enterprise_Linux_for_Oracle_9i_and_10g_Databases/chap-Oracle_9i_and_10g_Tuning_Guide-Memory_Usage_and_Page_Cache.html
