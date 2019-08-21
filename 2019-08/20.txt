@@ -1,0 +1,274 @@
+
+01 os.system和os.popen() 当中的; && ||几个符号的区别
+02 os.popen() 关于cd的命令的总结
+
+
+
+############################# 01 os.system和os.popen() 当中的; && ||几个符号的区别 ##############################
+python os.popen连续执行多条linux命令
+os.system执行linux命令，返回值为0：代表成功；1：代表失败
+
+os.popen执行linux命令，read获取返回值，可以连续执行多条命令，如下
+
+连续执行多条命令
+
+os.popen("cd.. && cd demo && touch 2.py")
+
+注意：
+
+1. 命令被分号“;”分隔，这些命令会顺序执行下去；中间命令出错，也不会影响下面的命令执行
+2. 命令被“&&”分隔，这些命令会顺序执行下去，遇到执行错误的命令停止；
+3. 命令被双竖线“||”分隔，这些命令会顺序执行下去，遇到执行成功的命令停止，后面的所有命令都将不会执行;
+
+########################### 02 os.popen() 关于cd的命令的总结 #############################################
+
+以下内容转自
+https://blog.csdn.net/fengqingting2/article/details/41940149
+https://blog.csdn.net/windone0109/article/details/8895875
+https://blog.csdn.net/zgl07/article/details/43196823
+
+
+今天遇到要在os.system中连续执行多条语句的情况，语句如下：
+
+cmd1="cd /d %s" % os.path.dirname(file_path)
+
+cmd2="python setup.py install"
+
+如果分为两次执行，即:os.system(cmd1) os.system(cmd2)，在执行第二条语句的时候会提示找不到setup.py文件，也就是没有进入到相应的路径，查阅了类似的帖子，有说明如下：
+
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+你需要了解os.system的工作原理：
+
+Execute the command (a string) in a subshell. This is implemented by calling the Standard C function system(), and has the same limitations...
+关于子进程的创建需要明确两点：
+
+父进程的环境变量(environment variables)会默认传递到子进程中(工作目录PWD就是环境变量之一)
+使用system函数，子进程无法影响父进程中的环境变量
+根据这两点，执行os.system(path)引发的工作目录变更作用范围仅限于第一个被创建的子进程，故而当前的工作目录没有变更，到执行os.system(upd)就会报错。
+关于这点，可以用REPL验证如下：
+
+>>> import os
+>>> os.getcwd()
+'/Users/user1'
+>>> os.system('cd /etc')
+0
+>>> os.getcwd()
+'/Users/user1'
+要达到预期的效果，如果仍使用os.system，有两种方法。
+第一种方法是确保工作目录的变更和svn都在子进程中进行，可以使用复合语句（如os.system('cd path-to-repo && svn ci')）或多个语句（如os.system('cd path-to-repo; svn ci')）。
+第二种方法则是先在父进程中切换工作目录(os.chdir('path-to-repo'))，再利用1.中提到的原理，执行子进程即可(os.system('svn ci'))。
+
+
+
+最后采用cmd="cd /d %s && python setup.py install" % os.path.dirname(file_path)的形式解决了问题，即采用&&连接多个命令
+
+#################################################################################
+
+两者的区别是：
+
+os.system(cmd)的返回值只会有0(成功),1,2
+
+os.popen(cmd)会吧执行的cmd的输出作为值返回。
+
+
+python调用Shell脚本，有两种方法：os.system(cmd)或os.popen(cmd),前者返回值是脚本的退出状态码，后者的返回值是脚本执行过程中的输出内容。实际使用时视需求情况而选择。
+
+现假定有一个shell脚本test.sh：
+
+#!/bin/bash
+
+1. echo "hello world!"
+
+2. exit 3
+
+os.system(cmd):
+
+该方法在调用完shell脚本后，返回一个16位的二进制数，低位为杀死所调用脚本的信号号码，高位为脚本的退出状态码，即脚本中“exit 1”的代码执行后，os.system函数返回值的高位数则是1，如果低位数是0的情况下，则函数的返回值是0×100,换算为10进制得到256。
+
+如果我们需要获得os.system的正确返回值，那使用位移运算可以还原返回值：
+
+1. >>>  n = os.system(test.sh)
+
+2. >>> n >> 8
+
+3. >>> 3
+
+os.popen(cmd):
+
+这种调用方式是通过管道的方式来实现，函数返回一个file-like的对象，里面的内容是脚本输出的内容（可简单理解为echo输出的内容）。使用os.popen调用test.sh的情况：
+python调用Shell脚本，有两种方法：os.system(cmd)或os.popen(cmd),前者返回值是脚本的退出状态码，后者的返回值是脚本执行过程中的输出内容。实际使用时视需求情况而选择。
+
+明显地，像调用”ls”这样的shell命令，应该使用popen的方法来获得内容
+
+
+
+
+
+以前就疑惑popen和system有什么不同，今天实际的应用，才让我恍然大悟
+os.popen（）可以实现一个“管道”，从这个命令获取的值可以继续被调用。而os.system不同，它只是调用，调用完后自身退出，可能返回个0吧
+
+比如，我想得到ntpd的进程id，就要这么做：
+os.popen('ps -C ntpd | grep -v CMD |awk '{ print $1 }').readlines()[0]
+
+
+
+
+
+######################################################################################3
+
+问题：/bin/xxx.py是一个返回码为1的程序。当python 程序使用os.system(”./bin/xxx.py”) 这样调用的时候， 成功运行后os.system 的返回值出现了问题，变成了256 ，也就是0×100。而不是正常应该返回的1。
+
+
+解决：查阅了文档发现os.system()的返回为：
+On Unix, the return value is the exit status of the process encoded in the format specified for wait().
+而os.wait()的返回为：
+a 16-bit number, whose low byte is the signal number that killed the process, and whose high byte is the exit status (if the signal number
+is zero);
+os.system的返回值并不是执行程序的返回结果。而是一个16位的数，它的高位才是返回码。也就是说os.system()返回256即 0×0100，返回码应该是其高位0×01即1。所以要获取程序运行退出的值（比如C的main函数中的return 0），需要处理一下。
+
+ret = os.system('./a.out')
+
+ret >>= 8
+
+这样才能获取到正确的返回值。另外还要注意：python获取到的值是无符号整数，所以返回负值的时候，打印出来是很大的正值。比如返回-1，python 会获取到255，-2则254，以此类推。所以最好就判断是否为0就可以了，实在要判断自己写的c程序返回值，建议返回0,1,2,3等值，出错返回 -1。
+
+另外，我遇到一次明明处理好了返回值，c程序调试信息提示也该返回值0了，结果python获取到的是 -1，而且无论c程序返回多少，python都获取-1。后来排查c程序的问题，发现原来是因为我这个python程序本身是由另一个C程序调用的，而调 用它的那个C程序中将SIGCLD信号忽略了（这表明python是根据子进程退出时产生的信号来获取返回值的），我将那个C程序的SIGCLD绑定到函 数，即使那个函数什么也不做，python也能获取到正确的返回值了。
+
+
+
+/**********************************************************************************************************************/
+
+linux命令执行后无论成功与否都有一个返回值：
+
+如果为 0，则表示命令执行成功，其它值则表示错误，具体的错误码含义如下：
+
+ "OS error code   1:  Operation not permitted"
+ "OS error code   2:  No such file or directory"
+ "OS error code   3:  No such process"
+ "OS error code   4:  Interrupted system call"
+ "OS error code   5:  Input/output error"
+ "OS error code   6:  No such device or address"
+ "OS error code   7:  Argument list too long"
+ "OS error code   8:  Exec format error"
+ "OS error code   9:  Bad file descriptor"
+ "OS error code  10:  No child processes"
+ "OS error code  11:  Resource temporarily unavailable"
+ "OS error code  12:  Cannot allocate memory"
+ "OS error code  13:  Permission denied"
+ "OS error code  14:  Bad address"
+ "OS error code  15:  Block device required"
+ "OS error code  16:  Device or resource busy"
+ "OS error code  17:  File exists"
+ "OS error code  18:  Invalid cross-device link"
+ "OS error code  19:  No such device"
+ "OS error code  20:  Not a directory"
+ "OS error code  21:  Is a directory"
+ "OS error code  22:  Invalid argument"
+ "OS error code  23:  Too many open files in system"
+ "OS error code  24:  Too many open files"
+ "OS error code  25:  Inappropriate ioctl for device"
+ "OS error code  26:  Text file busy"
+ "OS error code  27:  File too large"
+ "OS error code  28:  No space left on device"
+ "OS error code  29:  Illegal seek"
+ "OS error code  30:  Read-only file system"
+ "OS error code  31:  Too many links"
+ "OS error code  32:  Broken pipe"
+ "OS error code  33:  Numerical argument out of domain"
+ "OS error code  34:  Numerical result out of range"
+ "OS error code  35:  Resource deadlock avoided"
+ "OS error code  36:  File name too long"
+ "OS error code  37:  No locks available"
+ "OS error code  38:  Function not implemented"
+ "OS error code  39:  Directory not empty"
+ "OS error code  40:  Too many levels of symbolic links"
+ "OS error code  42:  No message of desired type"
+ "OS error code  43:  Identifier removed"
+ "OS error code  44:  Channel number out of range"
+ "OS error code  45:  Level 2 not synchronized"
+ "OS error code  46:  Level 3 halted"
+ "OS error code  47:  Level 3 reset"
+ "OS error code  48:  Link number out of range"
+ "OS error code  49:  Protocol driver not attached"
+ "OS error code  50:  No CSI structure available"
+ "OS error code  51:  Level 2 halted"
+ "OS error code  52:  Invalid exchange"
+ "OS error code  53:  Invalid request descriptor"
+ "OS error code  54:  Exchange full"
+ "OS error code  55:  No anode"
+ "OS error code  56:  Invalid request code"
+ "OS error code  57:  Invalid slot"
+ "OS error code  59:  Bad font file format"
+ "OS error code  60:  Device not a stream"
+ "OS error code  61:  No data available"
+ "OS error code  62:  Timer expired"
+ "OS error code  63:  Out of streams resources"
+ "OS error code  64:  Machine is not on the network"
+ "OS error code  65:  Package not installed"
+ "OS error code  66:  Object is remote"
+ "OS error code  67:  Link has been severed"
+ "OS error code  68:  Advertise error"
+ "OS error code  69:  Srmount error"
+ "OS error code  70:  Communication error on send"
+ "OS error code  71:  Protocol error"
+ "OS error code  72:  Multihop attempted"
+ "OS error code  73:  RFS specific error"
+ "OS error code  74:  Bad message"
+ "OS error code  75:  Value too large for defined data type"
+ "OS error code  76:  Name not unique on network"
+ "OS error code  77:  File descriptor in bad state"
+ "OS error code  78:  Remote address changed"
+ "OS error code  79:  Can not access a needed shared library"
+ "OS error code  80:  Accessing a corrupted shared library"
+ "OS error code  81:  .lib section in a.out corrupted"
+ "OS error code  82:  Attempting to link in too many shared libraries"
+ "OS error code  83:  Cannot exec a shared library directly"
+ "OS error code  84:  Invalid or incomplete multibyte or wide character"
+ "OS error code  85:  Interrupted system call should be restarted"
+ "OS error code  86:  Streams pipe error"
+ "OS error code  87:  Too many users"
+ "OS error code  88:  Socket operation on non-socket"
+ "OS error code  89:  Destination address required"
+ "OS error code  90:  Message too long"
+ "OS error code  91:  Protocol wrong type for socket"
+ "OS error code  92:  Protocol not available"
+ "OS error code  93:  Protocol not supported"
+ "OS error code  94:  Socket type not supported"
+ "OS error code  95:  Operation not supported"
+ "OS error code  96:  Protocol family not supported"
+ "OS error code  97:  Address family not supported by protocol"
+ "OS error code  98:  Address already in use"
+ "OS error code  99:  Cannot assign requested address"
+ "OS error code 100:  Network is down"
+ "OS error code 101:  Network is unreachable"
+ "OS error code 102:  Network dropped connection on reset"
+ "OS error code 103:  Software caused connection abort"
+ "OS error code 104:  Connection reset by peer"
+ "OS error code 105:  No buffer space available"
+ "OS error code 106:  Transport endpoint is already connected"
+ "OS error code 107:  Transport endpoint is not connected"
+ "OS error code 108:  Cannot send after transport endpoint shutdown"
+ "OS error code 109:  Too many references: cannot splice"
+ "OS error code 110:  Connection timed out"
+ "OS error code 111:  Connection refused"
+ "OS error code 112:  Host is down"
+ "OS error code 113:  No route to host"
+ "OS error code 114:  Operation already in progress"
+ "OS error code 115:  Operation now in progress"
+ "OS error code 116:  Stale NFS file handle"
+ "OS error code 117:  Structure needs cleaning"
+ "OS error code 118:  Not a XENIX named type file"
+ "OS error code 119:  No XENIX semaphores available"
+ "OS error code 120:  Is a named type file"
+ "OS error code 121:  Remote I/O error"
+ "OS error code 122:  Disk quota exceeded"
+ "OS error code 123:  No medium found"
+ "OS error code 124:  Wrong medium type"
+ "OS error code 125:  Operation canceled"
+ "OS error code 126:  Required key not available"
+ "OS error code 127:  Key has expired"
+ "OS error code 128:  Key has been revoked"
+ "OS error code 129:  Key was rejected by service"
+ "OS error code 130:  Owner died"
+ "OS error code 131:  State not recoverable"

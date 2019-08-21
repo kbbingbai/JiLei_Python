@@ -1,0 +1,152 @@
+1 python 读取配置文件
+
+	configPath = os.path.dirname(__file__)+"/requestHeader.ini"
+
+
+	class ReadConfig:
+		def __init__(self):
+			self.cf = configparser.ConfigParser()
+			self.cf.read(configPath)
+	
+	
+	def getValueByKey(self,section,name):
+		value = self.cf.get(section, name)
+		return value
+		
+
+2 python 链接mysql
+
+	self.db = pymysql.connect(self.host, self.user, self.password, self.database)
+    return self.db
+	
+3 python 链接es
+
+	self.es = Elasticsearch([{'host': self.host, 'port': self.port, 'timeout': int(self.timeout)}])
+    return self.es
+	
+4 python 插入单条es数据，可以不用建立索引
+
+	 esConn.index(index="systeminfo",doc_type="doc",body=computerInfo) 
+
+5 python 插入多条es数据
+	insertList = []
+    for temp in commmandsList:
+        action = {
+            "_op_type":"index",
+            "_index":"commands",
+            "_type":"doc",
+            "doc":{
+                "flag":temp["flag"],
+                "executestarttime":temp["executestarttime"],
+                "executeendtime": temp["executeendtime"]
+            }
+        }
+        insertList.append(action)
+
+6 pyhton 查询数据
+	commandsList = []
+    """
+       ��elasticsearch �еõ����еĴ�ִ�е�����
+       :return: ���ش�ִ�����������,��һ��list����ʽд��
+       """
+    allCommands = esConn.search(
+        index="commands",
+        body={
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "term": {
+                                "flag": {
+                                    "value": "1"
+                                }
+                            }
+                        },
+                        {
+                            "term": {
+                                "domain": {
+                                    "value": ip
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    )
+
+    for data in allCommands["hits"]["hits"]:
+        commands = data["_source"]["command"]
+        executeuser = data["_source"]["executeuser"]
+        domain = data["_source"]["domain"]
+        _id = data["_id"]
+        single = {
+            "commands":commands,
+            "executeuser":executeuser,
+            "domain": domain,
+            "_id":_id,
+        }
+        commandsList.append(single)
+    return commandsList
+	
+
+7 python 批量修改数据，方式一
+
+	def changeCommandFlagToExecute(esConn,commmandsList):
+    """
+    :param data: Ҫ�ı����ݵ�״̬,�������Ѿ����������������Ͼ�ִ����Щ������
+    :param flag: Ҫ�ı��״̬ flag=2
+    :return:
+    """
+
+    idsList = []
+    list(map(lambda temp:idsList.append(temp["_id"]),commmandsList))
+    body = {
+        "script": {
+            "source": "ctx._source.flag='2'"
+        },
+        "query": {
+            "ids": {
+                "values": idsList
+            }
+        }
+    }
+    esConn.update_by_query(index="commands",body=body)
+	
+	
+8 python 批量修改数据，方式二，注意_op_type 可以接受 index ,update ,delete,create,默认是index
+
+	updateList = []
+    for temp in commmandsList:
+        action = {
+            "_op_type":"update",
+            "_index":"commands",
+            "_type":"doc",
+            "doc":{
+                "flag":temp["flag"],
+                "executestarttime":temp["executestarttime"],
+                "executeendtime": temp["executeendtime"]
+            }
+        }
+        updateList.append(action)
+
+    helpers.bulk(client=esConn, actions=updateList)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+	
